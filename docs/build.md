@@ -8,11 +8,30 @@ Output: `dist/` (see below). A cold build takes about an hour per target
 (the toolchain dominates), 30 GB of disk each. Nothing outside the repository
 is touched: the OpenWrt checkout lives in `build/openwrt/` (ignored by git).
 
-**Host requirements**: Debian/Ubuntu-like Linux, `git make gcc g++ python3
-python3-setuptools rsync unzip wget curl file patch flex bison libncurses-dev
-libssl-dev zlib1g-dev gawk perl e2fsprogs` and about 8 GB of RAM. (OpenWrt's
-own list: <https://openwrt.org/docs/guide-developer/toolchain/install-buildsystem>.)
-Do not build as root.
+**Host requirements**: Debian/Ubuntu-like Linux and about 8 GB of RAM:
+
+```sh
+sudo apt install build-essential git python3 python3-setuptools rsync unzip wget curl \
+    file patch flex bison perl gawk libncurses-dev libssl-dev zlib1g-dev e2fsprogs swig
+```
+
+(OpenWrt's own list: <https://openwrt.org/docs/guide-developer/toolchain/install-buildsystem>.)
+Do not build as root. `build/build.sh` checks all of this before it starts and
+prints what is missing.
+
+Two requirements are easy to miss:
+
+- **`gawk`**: OpenWrt needs GNU awk. The default `awk` on Debian/Ubuntu is
+  `mawk`, which has no `asort()`, and the feed index step then fails with
+  `function asort never defined`. After installing it, make sure `awk --version`
+  says GNU Awk (`sudo update-alternatives --set awk /usr/bin/gawk`).
+- **`libncurses-dev`**: OpenWrt's prerequisite check fails with
+  `Build dependency: Please install ncurses` without it.
+
+If a first run failed before these were installed, the next run clears the stale
+feed indexes in `build/openwrt/tmp` and `build/openwrt/feeds/*.index` by itself.
+The `WARNING: No feed for package 'libc' found` lines during the feed update are
+harmless.
 
 Environment variables (all optional): `OPENWRT_DIR`, `OPENWRT_URL` (a local
 mirror is much faster), `JOBS`, `DL_DIR` (shared download cache), `DIST_DIR`.

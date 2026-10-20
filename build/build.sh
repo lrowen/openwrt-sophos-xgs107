@@ -26,8 +26,31 @@ DIST_DIR=${DIST_DIR:-$REPO/dist}
 
 case $WHAT in npu|x86|all) ;; *) echo "usage: $0 [npu|x86|all]" >&2; exit 2 ;; esac
 [ "$(id -u)" -ne 0 ] || { echo "do not build as root (OpenWrt refuses to)" >&2; exit 1; }
-command -v git >/dev/null && command -v make >/dev/null && command -v python3 >/dev/null ||
-	{ echo "need git, make, gcc, python3 (see docs/build.md for the full list)" >&2; exit 1; }
+
+# Check the host before cloning or building anything: a missing tool otherwise shows up
+# minutes later as an obscure OpenWrt error (e.g. "function asort never defined").
+missing_tools=
+for tool in git make gcc g++ python3 rsync unzip wget curl file patch flex bison perl gawk; do
+	command -v "$tool" >/dev/null 2>&1 || missing_tools="$missing_tools $tool"
+done
+# OpenWrt needs GNU awk: the default awk on Debian/Ubuntu (mawk) has no asort().
+if command -v awk >/dev/null 2>&1 && ! awk 'BEGIN { x[1] = 1; asort(x) }' >/dev/null 2>&1; then
+	echo "awk is not GNU awk (OpenWrt needs asort): install gawk and run" >&2
+	echo "  sudo update-alternatives --set awk /usr/bin/gawk" >&2
+	missing_tools="$missing_tools gawk(as awk)"
+fi
+missing_headers=
+for hdr in ncurses.h zlib.h openssl/ssl.h; do
+	echo "#include <$hdr>" | ${CC:-cc} -E -x c - >/dev/null 2>&1 || missing_headers="$missing_headers $hdr"
+done
+if [ -n "$missing_tools$missing_headers" ]; then
+	[ -z "$missing_tools" ] || echo "missing tools:$missing_tools" >&2
+	[ -z "$missing_headers" ] || echo "missing headers:$missing_headers (libncurses-dev zlib1g-dev libssl-dev)" >&2
+	echo "On Debian/Ubuntu:" >&2
+	echo "  sudo apt install build-essential git python3 python3-setuptools rsync unzip wget curl file patch flex bison perl gawk libncurses-dev libssl-dev zlib1g-dev e2fsprogs swig" >&2
+	echo "(full list and notes in docs/build.md)" >&2
+	exit 1
+fi
 
 if [ ! -d "$OPENWRT_DIR/.git" ]; then
 	git clone "$OPENWRT_URL" "$OPENWRT_DIR"
@@ -45,6 +68,7 @@ build() {
 	cd "$OPENWRT_DIR"
 	if [ -n "${DL_DIR:-}" ] && { [ -L dl ] || [ ! -e dl ]; }; then ln -sfn "$DL_DIR" dl; fi
 	cp "$REPO/build/feeds.conf" feeds.conf	# the feed commits the images were built with
+	rm -rf tmp feeds/*.index	# caches from an earlier failed run (e.g. before gawk was installed) are corrupt
 	./scripts/feeds update -a >/dev/null
 	./scripts/feeds install -a >/dev/null
 	cp "$REPO/build/config/$target.config" .config
